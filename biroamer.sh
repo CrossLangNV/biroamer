@@ -36,13 +36,14 @@ usage () {
     echo "    -b BLOCKSIZE      Number of lines for each job to be processed"
     echo "    -m MIX_CORPUS     A corpus to mix with"
     echo "    -o                Enable random omitting of sentences"
+    echo "    -p PATH           Set path for temporary directory"
     echo "    -t TOKL1          External tokenizer command for lang1"
     echo "    -T TOKL2          External tokenizer command for lang2"
     echo "    -h                Shows this message"
 }
 
 # Read optional arguments
-while getopts ":s:a:j:b:m:t:T:ho" options
+while getopts ":s:a:j:b:m:p:t:T:ho" options
 do
     case "${options}" in
         s) SEED=$OPTARG;;
@@ -51,6 +52,7 @@ do
         b) BLOCKSIZE=$OPTARG;;
         m) MIX_CORPUS=$OPTARG;;
         o) OMIT=true;;
+        p) TEMPDIR=$OPTARG;;
         t) TOKL1=$OPTARG;;
         T) TOKL2=$OPTARG;;
         h) usage
@@ -76,7 +78,12 @@ then
     exit 1
 fi
 
-MYTEMPDIR=$(mktemp -d)
+if [ -z MYTEMPDIR ]
+then MYTEMPDIR=$(mktemp -d)
+else MYTEMPDIR=$TEMPDIR
+     mkdir -p $TEMPDIR
+     rm -rf $MYTEMPDIR/*
+fi
 echo "Using temporary directory $MYTEMPDIR" 1>&2
 
 # Extract from TMX, omit, mix and shuffle
@@ -125,6 +132,8 @@ paste $MYTEMPDIR/omitted-mixed $MYTEMPDIR/f1.tok $MYTEMPDIR/f2.tok $MYTEMPDIR/sy
     | parallel -k -j$JOBS -l $BLOCKSIZE --pipe $NER \
     | $BUILDTMX $L1 $L2
 
-echo "Removing temporary directory $MYTEMPDIR" 1>&2
-
-rm -Rf $MYTEMPDIR
+# if user specified temporary directory, it is not deleted
+if [ -z $TEMPDIR ]
+then echo "Removing temporary directory $MYTEMPDIR" 1>&2
+     rm -Rf $MYTEMPDIR
+fi
