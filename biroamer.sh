@@ -35,6 +35,7 @@ usage () {
     echo "    -j JOBS           Number of jobs to run in parallel"
     echo "    -b BLOCKSIZE      Number of lines for each job to be processed"
     echo "    -m MIX_CORPUS     A corpus to mix with"
+    echo "    -n                Do not shuffle (e.g. when script should only be run for anonymizing entities)"
     echo "    -o                Enable random omitting of sentences"
     echo "    -p PATH           Set path for temporary directory"
     echo "    -t TOKL1          External tokenizer command for lang1"
@@ -43,7 +44,7 @@ usage () {
 }
 
 # Read optional arguments
-while getopts ":s:a:j:b:m:p:t:T:ho" options
+while getopts ":s:a:j:b:m:np:t:T:ho" options
 do
     case "${options}" in
         s) SEED=$OPTARG;;
@@ -51,8 +52,9 @@ do
         j) JOBS=$OPTARG;;
         b) BLOCKSIZE=$OPTARG;;
         m) MIX_CORPUS=$OPTARG;;
+        n) NOSHUF=true;
         o) OMIT=true;;
-        p) TEMPDIR=$OPTARG;;
+        p) SPECTEMPDIR=$OPTARG;;
         t) TOKL1=$OPTARG;;
         T) TOKL2=$OPTARG;;
         h) usage
@@ -78,10 +80,10 @@ then
     exit 1
 fi
 
-if [ -z MYTEMPDIR ]
+if [ -z $SPECTEMPDIR ]
 then MYTEMPDIR=$(mktemp -d)
-else MYTEMPDIR=$TEMPDIR
-     mkdir -p $TEMPDIR
+else MYTEMPDIR=$SPECTEMPDIR
+     mkdir -p $MYTEMPDIR
      rm -rf $MYTEMPDIR/*
 fi
 echo "Using temporary directory $MYTEMPDIR" 1>&2
@@ -91,7 +93,7 @@ cat /dev/stdin \
     | $TMXT --codelist $L1,$L2 \
     | $OMIT_COMMAND \
     | cat - $MIX_CORPUS \
-    | shuf --random-source=<(get_seeded_random $SEED) \
+    | if [ "$NOSHUF" == true ]; then cat; else shuf --random-source=<(get_seeded_random $SEED); fi \
     >$MYTEMPDIR/omitted-mixed
 
 # Append corpus to improve alignment
@@ -124,16 +126,19 @@ $FASTALIGN -i $MYTEMPDIR/fainput -I 6 -d -o -v >$MYTEMPDIR/forward.align
 $FASTALIGN -i $MYTEMPDIR/fainput -I 6 -d -o -v -r >$MYTEMPDIR/reverse.align
 $ATOOLS -i $MYTEMPDIR/forward.align -j $MYTEMPDIR/reverse.align -c grow-diag-final-and >$MYTEMPDIR/symmetric.align
 
+# if user specified temporary directory, we keep everything
+if [ -z $SPECTEMPDIR ]
 rm -Rf $MYTEMPDIR/forward.align $MYTEMPDIR/reverse.align $MYTEMPDIR/fainput
+fi
 
 # NER and build TMX
 paste $MYTEMPDIR/omitted-mixed $MYTEMPDIR/f1.tok $MYTEMPDIR/f2.tok $MYTEMPDIR/symmetric.align \
     | $CAT \
-    | parallel -k -j$JOBS -l $BLOCKSIZE --pipe $NER \
-    | $BUILDTMX $L1 $L2
+    | parallel -k -j$JOBS -l $BLOCKSIZE --pipe $NER > $MYTEMPDIR/ner.out
 
-# if user specified temporary directory, it is not deleted
-if [ -z $TEMPDIR ]
+cat $MYTEMPDIR/ner.out | $BUILDTMX $L1 $L2
+
+if [ -z $SPECTEMPDIR ]
 then echo "Removing temporary directory $MYTEMPDIR" 1>&2
      rm -Rf $MYTEMPDIR
 fi
