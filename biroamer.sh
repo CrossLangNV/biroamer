@@ -29,41 +29,43 @@ get_seeded_random()
 usage () {
     echo "Usage: `basename $0` [options] <lang1> <lang2>"
     echo "Options:"
-    echo "    -s SEED           Set random seed for reprodibility"
+    echo "    -s SEED           Set random seed for reproducibility"
     echo "    -a ALIGN_CORPUS   Extra corpus to improve alignment"
     echo "                      It won't be included in the output"
     echo "    -j JOBS           Number of jobs to run in parallel"
     echo "    -b BLOCKSIZE      Number of lines for each job to be processed"
+    echo "    -g                Keep original order of sentences, i.e. do not shuffle (e.g. when script is in extended modus and should only be run for anonymizing entities)"
     echo "    -m MIX_CORPUS     A corpus to mix with"
-    echo "    -n                Do not shuffle (e.g. when script should only be run for anonymizing entities)"
     echo "    -o                Enable random omitting of sentences"
     echo "    -p PATH           Set path for temporary directory"
     echo "    -t TOKL1          External tokenizer command for lang1"
     echo "    -T TOKL2          External tokenizer command for lang2"
+    echo "    -y                Replace entities by placeholders instead of surrounding them by <hi>...</hi> tags"
     echo "    -h                Shows this message"
 }
 
 # Read optional arguments
-while getopts ":s:a:j:b:m:np:t:T:ho" options
+while getopts ":s:a:j:b:gm:op:t:T:yh" options
 do
     case "${options}" in
         s) SEED=$OPTARG;;
         a) ALIGN_CORPUS=$OPTARG;;
         j) JOBS=$OPTARG;;
         b) BLOCKSIZE=$OPTARG;;
+        g) NOSHUFFLE=true;;
         m) MIX_CORPUS=$OPTARG;;
-        n) NOSHUF=true;
         o) OMIT=true;;
         p) SPECTEMPDIR=$OPTARG;;
         t) TOKL1=$OPTARG;;
         T) TOKL2=$OPTARG;;
+        y) PLACEHOLDER=true;;
         h) usage
             exit 0;;
         \?) usage 1>&2
             exit 1;;
     esac
 done
-if [ "$OMIT" = true ]; then
+if [ "$OMIT" == true ]; then
     OMIT_COMMAND="$OMIT_COMMAND -s $SEED"
 else
     OMIT_COMMAND=cat
@@ -84,7 +86,6 @@ if [ -z $SPECTEMPDIR ]
 then MYTEMPDIR=$(mktemp -d)
 else MYTEMPDIR=$SPECTEMPDIR
      mkdir -p $MYTEMPDIR
-     rm -rf $MYTEMPDIR/*
 fi
 echo "Using temporary directory $MYTEMPDIR" 1>&2
 
@@ -93,7 +94,7 @@ cat /dev/stdin \
     | $TMXT --codelist $L1,$L2 \
     | $OMIT_COMMAND \
     | cat - $MIX_CORPUS \
-    | if [ "$NOSHUF" == true ]; then cat; else shuf --random-source=<(get_seeded_random $SEED); fi \
+    | if [ "$NOSHUFFLE" == true ]; then cat; else shuf --random-source=<(get_seeded_random $SEED); fi \
     >$MYTEMPDIR/omitted-mixed
 
 # Append corpus to improve alignment
@@ -111,12 +112,12 @@ fi
 # Tokenize
 cut -f1 $MYTEMPDIR/omitted-mixed \
     | parallel -j$JOBS -k -l $BLOCKSIZE --pipe $TOKL1 \
-    | awk '{print tolower($0)}' \
-    >$MYTEMPDIR/f1.tok
+    >$MYTEMPDIR/f1.tok.origcase
+awk '{print tolower($0)}' >$MYTEMPDIR/f1.tok.origcase >$MYTEMPDIR/f1.tok
 cut -f2 $MYTEMPDIR/omitted-mixed \
     | parallel -j$JOBS -k -l $BLOCKSIZE --pipe $TOKL2 \
-    | awk '{print tolower($0)}' \
-    >$MYTEMPDIR/f2.tok
+    >$MYTEMPDIR/f2.tok.origcase
+awk '{print tolower($0)}' >$MYTEMPDIR/f2.tok.origcase >$MYTEMPDIR/f2.tok
 
 paste $MYTEMPDIR/f1.tok $MYTEMPDIR/f2.tok | sed 's%'$'\t''% ||| %g' >$MYTEMPDIR/fainput
 
@@ -128,13 +129,21 @@ $ATOOLS -i $MYTEMPDIR/forward.align -j $MYTEMPDIR/reverse.align -c grow-diag-fin
 
 # if user specified temporary directory, we keep everything
 if [ -z $SPECTEMPDIR ]
-rm -Rf $MYTEMPDIR/forward.align $MYTEMPDIR/reverse.align $MYTEMPDIR/fainput
+then rm -Rf $MYTEMPDIR/forward.align $MYTEMPDIR/reverse.align $MYTEMPDIR/fainput
 fi
 
 # NER and build TMX
-paste $MYTEMPDIR/omitted-mixed $MYTEMPDIR/f1.tok $MYTEMPDIR/f2.tok $MYTEMPDIR/symmetric.align \
+paste $MYTEMPDIR/omitted-mixed $MYTEMPDIR/f1.tok.origcase $MYTEMPDIR/f2.tok.origcase $MYTEMPDIR/f1.tok $MYTEMPDIR/f2.tok $MYTEMPDIR/symmetric.align \
     | $CAT \
-    | parallel -k -j$JOBS -l $BLOCKSIZE --pipe $NER > $MYTEMPDIR/ner.out
+    | parallel -k -j$JOBS -l $BLOCKSIZE --pipe $NER > $MYTEMPDIR/nerext.out
+
+# nerext.out is extended output, ner.out is final output
+awk -F '\t' '{ sub(/^.*\t__srcmap__\t/,""); sub(/\t__trgmap__\t.*$/,""); print $0 }' $MYTEMPDIR/nerext.out > $MYTEMPDIR/srcmapfile
+awk -F '\t' '{ sub(/^.*\t__trgmap__\t/,""); print $0 }' $MYTEMPDIR/nerext.out > $MYTEMPDIR/trgmapfile
+if [ "$PLACEHOLDER" == true ]
+then awk -F '\t' '{ print $5 "\t" $6 }' $MYTEMPDIR/nerext.out > $MYTEMPDIR/ner.out
+else awk -F '\t' '{ print $1 "\t" $2 }' $MYTEMPDIR/nerext.out > $MYTEMPDIR/ner.out
+fi
 
 cat $MYTEMPDIR/ner.out | $BUILDTMX $L1 $L2
 

@@ -258,22 +258,68 @@ def get_entities(sentence, ner=True):
 
     return "".join(fragments), n_entities
 
+# return anonymized tokenized sentence, anonymized non-tokenized sentence, and mapping table referring to positions in the tokenized original sentence and tokenized anonymised sentence
+def get_anontok_mapping(toksent,toksentlc,nontokwithents):
+
+     placeholder="__ENTITY__"
+
+     # create anonymized tokenized sentence and get mapping
+     tokens=toksent.split()
+     tokenslc=toksentlc.split()
+     anontokens=list()
+     clusters=condense(search_offsets(nontokwithents), offsets(tokenslc))
+     mapping=list()
+     tokensless=0 # after anonymizing token list, we have TOKENSLESS tokens less in the list
+     copyfrom=0
+     for cluster in sorted(clusters,key=lambda x: min(x)):
+        mapping.extend([min(cluster),max(cluster)," ".join(tokens[min(cluster):max(cluster)+1]),min(cluster)-tokensless,min(cluster)-tokensless,placeholder])
+        tokensless+=max(cluster)-min(cluster)
+        if copyfrom < min(cluster):
+           anontokens.extend(tokens[copyfrom:min(cluster)])
+        anontokens.append(placeholder)
+        copyfrom=max(cluster)+1
+     if copyfrom < len(tokens)-1:
+       anontokens.extend(tokens[copyfrom:])
+
+     # create anonymized non-tokenized sentence
+     sentparts=re.split(r'</?entity>',nontokwithents)
+     for i in range(0,len(sentparts)-1,2):
+          sentparts[i+1]=placeholder
+
+     return " ".join(anontokens), "".join(sentparts), mapping
+
+# input: tab-delimited lines [source sentence] [target sentence]] [tokenized source] [tokenized target] [lowercased tokenized source] [lowercased tokenized target] [symmetric alignment]
+#   (the latter file consists of links between word positions, one line per sentence)
+#
+# output: tab-delimited lines with the following fields:
+# - [non-tokenized source sentence with entities enclosed by <entity>...</entity> tags] 
+# - [non-tokenized target sentence with entities enclosed by <entity>...</entity> tags]
+# - [tokenized source sentence with placeholders]
+# - [tokenized target sentence with placeholders]
+# - [non-tokenized source sentence with placeholders]
+# - [non-tokenized target sentence with placeholders]
+# - mapping table, consisting itself of the following fields:
+#   "srcmap",([start position of entity, 0-based] [end position of entity] [entity] [start position of placeholder] [end position of placeholder] placeholder)*,
+#   "trgmap",([start position ... )*
+#   (start and end position of placeholder are always identical here, as placeholder is one token) 
 def main():
     for i in sys.stdin:
         fields = i.strip().split("\t")
-        if len(fields) < 5:
+        if len(fields) < 7:
             sys.stderr.write('Error with line: '+ str(fields))
             continue
         outent, n_ents = get_entities(fields[0])
         # If there are entities on the source, align them to the target
         # otherwise look for entities in the target only with regex
         if n_ents > 0:
-            outsrc, outtrg = align(outent, fields[1], fields[2], fields[3], fields[4], reverse_alignment(fields[4]))
+            outsrc, outtrg = align(outent, fields[1], fields[4], fields[5], fields[6], reverse_alignment(fields[6]))
         else:
             outsrc = fields[0]
-            outtrg = get_entities(fields[1], ner=False)[0]
-
-        sys.stdout.write(f"{outsrc}\t{outtrg}\n")
-
+            outtrg = get_entities(fields[1],ner=False)[0]
+        srctokanon, srcnontokanon, srcmapping = get_anontok_mapping(fields[2],fields[4],outsrc)
+        trgtokanon, trgnontokanon, trgmapping = get_anontok_mapping(fields[3],fields[5],outtrg)
+        maptoprint="__srcmap__\t"+"\t".join(str(x) for x in srcmapping)+"\t__trgmap__\t"+"\t".join(str(x) for x in trgmapping)
+        sys.stdout.write(f"{outsrc}\t{outtrg}\t{srctokanon}\t{trgtokanon}\t{srcnontokanon}\t{trgnontokanon}\t{maptoprint}\n")
+ 
 if __name__ == "__main__":
     main()
