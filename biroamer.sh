@@ -113,11 +113,11 @@ fi
 cut -f1 $MYTEMPDIR/omitted-mixed \
     | parallel -j$JOBS -k -l $BLOCKSIZE --pipe $TOKL1 \
     >$MYTEMPDIR/f1.tok.origcase
-awk '{print tolower($0)}' >$MYTEMPDIR/f1.tok.origcase >$MYTEMPDIR/f1.tok
+awk '{print tolower($0)}' $MYTEMPDIR/f1.tok.origcase >$MYTEMPDIR/f1.tok
 cut -f2 $MYTEMPDIR/omitted-mixed \
     | parallel -j$JOBS -k -l $BLOCKSIZE --pipe $TOKL2 \
     >$MYTEMPDIR/f2.tok.origcase
-awk '{print tolower($0)}' >$MYTEMPDIR/f2.tok.origcase >$MYTEMPDIR/f2.tok
+awk '{print tolower($0)}' $MYTEMPDIR/f2.tok.origcase >$MYTEMPDIR/f2.tok
 
 paste $MYTEMPDIR/f1.tok $MYTEMPDIR/f2.tok | sed 's%'$'\t''% ||| %g' >$MYTEMPDIR/fainput
 

@@ -288,7 +288,7 @@ def get_anontok_mapping(toksent,toksentlc,nontokwithents):
 
      return " ".join(anontokens), "".join(sentparts), mapping
 
-# input: tab-delimited lines [source sentence] [target sentence]] [tokenized source] [tokenized target] [lowercased tokenized source] [lowercased tokenized target] [symmetric alignment]
+# input: tab-delimited lines [source sentence] [target sentence] [tokenized source] [tokenized target] [lowercased tokenized source] [lowercased tokenized target] [symmetric alignment]
 #   (the latter file consists of links between word positions, one line per sentence)
 #
 # output: tab-delimited lines with the following fields:
@@ -306,7 +306,7 @@ def main():
     for i in sys.stdin:
         fields = i.strip().split("\t")
         if len(fields) < 7:
-            sys.stderr.write('Error with line: '+ str(fields))
+            sys.stderr.write('Error with line: '+ str(fields)+"\n")
             continue
         outent, n_ents = get_entities(fields[0])
         # If there are entities on the source, align them to the target
