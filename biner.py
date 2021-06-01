@@ -261,7 +261,7 @@ def get_entities(sentence, ner=True):
 # return anonymized tokenized sentence, anonymized non-tokenized sentence, and mapping table referring to positions in the tokenized original sentence and tokenized anonymised sentence
 def get_anontok_mapping(toksent,toksentlc,nontokwithents):
 
-     placeholder="__PERSON__"
+     placeholder="__ENTITY__"
 
      # create anonymized tokenized sentence and get mapping
      tokens=toksent.split()
