@@ -278,7 +278,7 @@ def get_anontok_mapping(toksent,toksentlc,nontokwithents):
            anontokens.extend(tokens[copyfrom:min(cluster)])
         anontokens.append(placeholder)
         copyfrom=max(cluster)+1
-     if copyfrom < len(tokens)-1:
+     if copyfrom < len(tokens):
        anontokens.extend(tokens[copyfrom:])
 
      # create anonymized non-tokenized sentence
